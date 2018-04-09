@@ -1,6 +1,9 @@
 import gc
 import os
+import sys
 import tracemalloc
+
+from itertools import groupby
 
 
 def current_memory_usage():
@@ -24,6 +27,7 @@ class ResourceTracker(object):
 
         self.non_monotonic = set()
         self.tracebacks = {}
+        self.last_snapshot = None
 
         self.enable_tracemalloc = enable_tracemalloc
         self.started = False
@@ -89,8 +93,11 @@ class ResourceTracker(object):
         # removes noise
         gc.collect()
 
-        snapshot = tracemalloc.take_snapshot().filter_traces(filters)
+        self.last_snapshot = tracemalloc.take_snapshot()
+
+        snapshot = self.last_snapshot.filter_traces(filters)
         statistics = snapshot.statistics('lineno')
+
         updated = set()
 
         for stat in statistics:
@@ -152,4 +159,38 @@ class ResourceTracker(object):
             size = size / 1024
 
             print(f"{size: >8.3f} KiB | {stable_for} | {name}")
+        print()
+
+    def show_memory_usage_by_module(self):
+        print(f"Top memory hungry modules (since tracing started):")
+
+        paths = {getattr(m, '__file__', m): k for k, m in sys.modules.items()}
+
+        def extract_module(statistic):
+            filename = statistic.traceback[0].filename
+
+            if filename in paths:
+                return paths[filename]
+
+            return filename.lstrip('<').rstrip('>')
+
+        def extract_toplevel_module(statistic):
+            module = extract_module(statistic)
+
+            if module.startswith(('onegov', 'more')):
+                return '.'.join(module.split('.')[:2])
+            else:
+                return module.split('.', 1)[0]
+
+        stats = self.last_snapshot.statistics('filename')
+        stats.sort(key=extract_toplevel_module)
+
+        usage = {}
+
+        for module, stats in groupby(stats, key=extract_toplevel_module):
+            usage[module] = sum(s.size for s in stats)
+
+        for name, size in sorted(usage.items(), key=lambda i: -i[1])[:10]:
+            print(f"{name}: {size / 1024:.3f} KiB")
+
         print()

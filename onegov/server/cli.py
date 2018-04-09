@@ -94,7 +94,11 @@ RESOURCE_TRACKER = None
 )
 @click.option(
     '--tracemalloc',
-    help="Enable tracemalloc",
+    help=(
+        "Enable tracemalloc after the first request. To track earlier, use "
+        "PYTHONTRACEMALLOC=1 onegov-server instead. Note that due to the "
+        "amount of tracked memory, this second option is significantly slower "
+    ),
     default=False,
     is_flag=True
 )
@@ -239,6 +243,7 @@ class WsgiProcess(multiprocessing.Process):
         RESOURCE_TRACKER.show_memory_usage()
 
         if tracemalloc.is_tracing():
+            RESOURCE_TRACKER.show_memory_usage_by_module()
             RESOURCE_TRACKER.show_monotonically_increasing_traces()
 
         print("-" * shutil.get_terminal_size((80, 20)).columns)
